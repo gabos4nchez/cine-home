@@ -1,0 +1,22 @@
+name: Error
+description: Algo del Home o de los scripts no funciona.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: No incluyas IP, nombres de Wi-Fi, seriales ni cuentas. Recorta esos datos de las capturas.
+  - type: input
+    id: device
+    attributes:
+      label: Equipo
+      description: Modelo, versión de Android y build.
+      placeholder: onn. 4K Streaming Box, Google TV 14, URO4.260304.092
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: Qué pasó
+      description: Qué hiciste, qué esperabas y qué ocurrió. Si hay un error en consola, pégalo aquí.
+    validations:
+      required: true

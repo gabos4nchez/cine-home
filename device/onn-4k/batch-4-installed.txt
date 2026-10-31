@@ -1,0 +1,7 @@
+com.disney.disneyplus
+com.amazon.amazonvideo.livingroom
+com.apple.atve.androidtv.appletv
+com.wbd.stream
+com.iqiyi.i18n.tv
+com.univision.prendetv
+com.plexapp.android

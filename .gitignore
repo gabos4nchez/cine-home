@@ -1,0 +1,19 @@
+tools/venv/
+tools/adbkey/
+__pycache__/
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+hs_err_pid*.log
+replay_pid*.log
+.DS_Store
+
+# Copias y capturas de tu TV: pueden mostrar serial, android_id, IP o el nombre de tu Wi-Fi.
+backup/
+shots/
+
+# Las imagenes destacadas son tuyas; publicarlas puede infringir derechos de autor.
+hero/*
+!hero/README.md

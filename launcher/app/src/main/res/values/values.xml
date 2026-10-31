@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Inicio</string>
+    <string name="selected">SELECCIONADO</string>
+    <string name="wifi">Configuración de Wi-Fi</string>
+    <string name="channels">CANALES</string>
+
+    <color name="ground">#07090B</color>
+    <color name="ink">#F2F2EE</color>
+    <color name="ink_soft">#C9D1D3</color>
+    <color name="ink_mute">#A7B2B5</color>
+    <color name="accent">#FF8A66</color>
+    <color name="tile">#12191C</color>
+    <color name="tile_on">#1A2226</color>
+    <color name="tile_line">#22303A</color>
+    <color name="tile_line_soft">#33434A</color>
+
+    <style name="Theme.Cine" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/ground</item>
+        <item name="android:colorBackground">@color/ground</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowSwipeToDismiss">false</item>
+    </style>
+</resources>

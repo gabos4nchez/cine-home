@@ -1,0 +1,16 @@
+{
+  "dock_apps": [
+    "com.goodtoolapps.zeus",
+    "com.alphainventor.filemanager",
+    "com.esaba.downloader",
+    "com.android.vending",
+    "com.android.tv.settings"
+  ],
+  "app_labels": [
+    "com.goodtoolapps.zeus=Navegador",
+    "com.alphainventor.filemanager=Archivos",
+    "com.esaba.downloader=Downloader",
+    "com.android.vending=Play Store",
+    "com.android.tv.settings=Ajustes"
+  ]
+}

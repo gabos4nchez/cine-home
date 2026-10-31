@@ -1,0 +1,40 @@
+# onn. 4K Streaming Box (YOC), Google TV 14 (SDK 34), build URO4.260304.092.16202347
+# Referencia: la lista completa, con el motivo de cada tanda. Se aplica con los archivos batch-*.txt.
+# Todo se DESHABILITA para el usuario 0, nunca se desinstala. Para deshacerlo: scripts\restore.ps1
+#
+# Se conservan porque el equipo los necesita: com.gretzky.GlobalKey, com.droidlogic.*, com.onn.bluetoothconnect,
+# com.google.android.tv.remote.service, com.google.android.tv.dfuservice, com.google.android.tv.axel,
+# Play Store / Play Services, Gboard.
+# Se conservan por decision del dueno: Chromecast (mediashell) y los avisos de actualizacion (updatenotification).
+
+# Tanda 1: telemetria, comentarios y Privacy Sandbox
+com.google.android.feedback
+com.android.tv.feedbackconsent
+com.android.adservices.api
+com.android.ondevicepersonalization.services
+com.android.federatedcompute.services
+
+# Tanda 2: apps precargadas y asistente de voz (el microfono del control deja de funcionar)
+com.google.android.play.games
+com.google.android.videos
+com.android.printspooler
+com.google.android.marvin.talkback
+com.google.android.katniss
+
+# Tanda 3: streaming preinstalado. Quita lo que uses.
+com.google.android.youtube.tv
+com.google.android.youtube.tvmusic
+com.netflix.ninja
+com.netflix.tokenmanager
+
+# Tanda 4: streaming instalado despues. Quita lo que uses.
+com.disney.disneyplus
+com.amazon.amazonvideo.livingroom
+com.apple.atve.androidtv.appletv
+com.wbd.stream
+com.iqiyi.i18n.tv
+com.univision.prendetv
+com.plexapp.android
+
+# Tanda 5: asistente de configuracion. Solo despues de instalar el Home.
+com.google.android.tungsten.setupwraith

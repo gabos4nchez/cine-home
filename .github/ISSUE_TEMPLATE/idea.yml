@@ -1,0 +1,11 @@
+name: Idea
+description: Propón una mejora del aspecto o de la navegación del Home.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: La idea
+      description: Qué cambiarías y por qué. Una imagen de referencia ayuda.
+    validations:
+      required: true

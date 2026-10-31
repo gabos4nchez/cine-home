@@ -1,0 +1,5 @@
+com.google.android.play.games
+com.google.android.videos
+com.android.printspooler
+com.google.android.marvin.talkback
+com.google.android.katniss

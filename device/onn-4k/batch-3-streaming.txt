@@ -1,0 +1,4 @@
+com.google.android.youtube.tv
+com.google.android.youtube.tvmusic
+com.netflix.ninja
+com.netflix.tokenmanager
