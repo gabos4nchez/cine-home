@@ -11,6 +11,12 @@ Una apariencia para el Home de Android TV / Google TV, basada en las soluciones 
 > Lo que aporta este repositorio es el aspecto del Home y la lista de un **onn. 4K Streaming Box**. Detalle en
 > [CREDITS.md](CREDITS.md). No es un proyecto oficial de cleanyourtv, onn., Walmart ni Google.
 
+**In English:** Cine Home is a full-screen look for the Android TV / Google TV home screen, based on the solutions
+from [cleanyourtv](https://github.com/Gathin23/cleanyourtv). The APK is about 124 KB, with no internet permission, no
+background services, no blur and no video. It is built from source with Docker, and the debloat is reversible because
+apps are disabled, never uninstalled. Tested only on an onn. 4K Streaming Box (Google TV 14). The docs are in Spanish;
+issues and pull requests in English are welcome.
+
 ## Qué hace
 
 - **Home a pantalla completa:** título con degradado en el color de la app seleccionada, fondo fluido y una imagen
