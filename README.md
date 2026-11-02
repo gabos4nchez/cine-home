@@ -12,7 +12,7 @@ Una apariencia para el Home de Android TV / Google TV, basada en las soluciones 
 > [CREDITS.md](CREDITS.md). No es un proyecto oficial de cleanyourtv, onn., Walmart ni Google.
 
 **In English:** Cine Home is a full-screen look for the Android TV / Google TV home screen, based on the solutions
-from [cleanyourtv](https://github.com/Gathin23/cleanyourtv). The APK is about 124 KB, with no internet permission, no
+from [cleanyourtv](https://github.com/Gathin23/cleanyourtv). The APK is about 127 KB, with no internet permission, no
 background services, no blur and no video. It is built from source with Docker, and the debloat is reversible because
 apps are disabled, never uninstalled. Tested only on an onn. 4K Streaming Box (Google TV 14). The docs are in Spanish;
 issues and pull requests in English are welcome.
@@ -23,7 +23,11 @@ issues and pull requests in English are welcome.
   destacada o el logo grande de la app.
 - **Canales por páginas:** seis por página en una sola fila, con flechas que indican si hay más.
 - **Botón de Wi-Fi** arriba a la derecha.
-- **Ligero:** APK de unos 124 KB en Java. Sin permiso de internet, sin servicios en segundo plano, sin desenfoque ni
+- **Menú al mantener OK** sobre una app: Abrir, Mover, Actualizar (si vino de Play Store), Información y
+  Desinstalar (si no es del sistema). **Mover** levanta la app para llevarla con ◀ ▶; OK o Atrás guarda el orden.
+- **Play Store y Ajustes siempre al final:** las apps nuevas entran antes que ellas. Solo cambian de lugar si tú las
+  mueves con Mover.
+- **Ligero:** APK de unos 127 KB en Java. Sin permiso de internet, sin servicios en segundo plano, sin desenfoque ni
   video.
 - **Limpieza reversible:** las apps se deshabilitan y nunca se desinstalan.
 
@@ -168,7 +172,10 @@ El acento coral es `accent` en
   que uno sustituye al otro y no pueden convivir.
 - **Clave de firma:** el APK se firma con una clave de depuración que vive en el volumen de Docker
   `cleanyourtv-gradle`. Si lo borras, la siguiente instalación falla con `INSTALL_FAILED_UPDATE_INCOMPATIBLE`:
-  desinstala primero `com.gathin.tvhome`. Por eso no se publican APK; cada quien compila el suyo.
+  desinstala primero `com.gathin.tvhome`, y con él su tema, sus imágenes y el orden de las apps. Guarda una copia
+  fuera del repositorio, nunca en él:
+  `docker run --rm -v cleanyourtv-gradle:/gradle -v "<carpeta>:/out" cleanyourtv-android-build cp /gradle/.android/debug.keystore /out/`.
+  Por eso no se publican APK; cada quien compila el suyo.
 - **Chromecast:** funcionó con el asistente deshabilitado. YouTube y Netflix no abren por Cast mientras sus apps sigan
   deshabilitadas.
 - **Botones del control:** el engranaje y los botones de apps pueden no hacer nada en este Home.

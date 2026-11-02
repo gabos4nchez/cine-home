@@ -4,6 +4,9 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+    <!-- Desinstalar in the hold-OK menu: without it Android drops the uninstall request silently. -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
     <!-- Android 11+ package visibility: without this the channel row comes up empty. -->
     <queries>
         <intent>

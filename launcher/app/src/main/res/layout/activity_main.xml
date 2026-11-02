@@ -10,9 +10,11 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- clipChildren off down to the row: a tile lifted by Mover rises above the row's own bounds. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:clipChildren="false"
         android:orientation="vertical">
 
         <FrameLayout
@@ -119,7 +121,8 @@
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="88dp"
-            android:layout_marginTop="15dp">
+            android:layout_marginTop="15dp"
+            android:clipChildren="false">
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/tiles"
@@ -127,6 +130,7 @@
                 android:layout_height="match_parent"
                 android:layout_marginStart="42dp"
                 android:layout_marginEnd="42dp"
+                android:clipChildren="false"
                 android:focusable="false"
                 android:overScrollMode="never"
                 android:scrollbars="none" />
@@ -153,4 +157,14 @@
                 android:visibility="invisible" />
         </FrameLayout>
     </LinearLayout>
+
+    <!-- Holding OK on a tile: placed over that tile in code, filled with what that app allows. -->
+    <LinearLayout
+        android:id="@+id/menu"
+        android:layout_width="200dp"
+        android:layout_height="wrap_content"
+        android:elevation="8dp"
+        android:orientation="vertical"
+        android:padding="6dp"
+        android:visibility="gone" />
 </FrameLayout>

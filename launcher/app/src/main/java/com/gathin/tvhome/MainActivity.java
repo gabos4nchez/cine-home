@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
@@ -17,6 +18,8 @@ import android.graphics.PixelFormat;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -26,9 +29,11 @@ import android.util.LruCache;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -41,12 +46,15 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -55,10 +63,17 @@ import java.util.concurrent.Executors;
  * Focus is one number kept here rather than Android's focus search, so every D-pad press has one result:
  * Left/Right move one tile, sliding to the next page of six past the edge of a page and stopping at the first and
  * last app; Up goes to the Wi-Fi button and Down from there comes back to the same tile.
+ * A tap of OK opens the app when OK is let go; holding it opens a menu over the tile instead, whose Mover lifts the
+ * tile so Left/Right carry it along the row, and the order is kept until the app data is cleared.
  */
 public final class MainActivity extends Activity {
     private static final int COLUMNS = 6;
     private static final String SETTINGS = "com.android.tv.settings";
+    private static final String PLAY_STORE = "com.android.vending";
+    // At the end of the row, in this order, unless the person has carried them elsewhere with Mover.
+    private static final String[] LAST = {PLAY_STORE, SETTINGS};
+    private static final String OPEN = "Abrir", MOVE = "Mover", UPDATE = "Actualizar", INFO = "Información",
+            UNINSTALL = "Desinstalar";
     private static final String[] DEFAULT_DOCK = {"com.goodtoolapps.zeus", "com.alphainventor.filemanager", "com.esaba.downloader", "com.android.vending", SETTINGS};
     private static final Map<String, String> DESCRIPTIONS = new HashMap<>();
     static {
@@ -92,6 +107,15 @@ public final class MainActivity extends Activity {
     private SharedPreferences prefs;
     private int selected;
     private String loadedSignature = "";
+    private LinearLayout menu;
+    private final List<String> menuActions = new ArrayList<>();
+    private int menuIndex = -1;                             // -1 while the menu is closed.
+    private int moveStart;
+    private boolean moving, okPending, longPressed;
+    private final Runnable longPress = () -> {
+        longPressed = true;
+        showMenu();
+    };
     private final BroadcastReceiver tick = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) { updateClock(); }
     };
@@ -112,7 +136,8 @@ public final class MainActivity extends Activity {
         prefs = getPreferences(MODE_PRIVATE);
         arrowLeft = findViewById(R.id.arrow_left);
         arrowRight = findViewById(R.id.arrow_right);
-        row = new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false);
+        menu = findViewById(R.id.menu);
+        row =new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false);
         tiles.setLayoutManager(row);
         tiles.setItemAnimator(null);
         tiles.setAdapter(new Tiles());
@@ -131,6 +156,10 @@ public final class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         unregisterReceiver(tick);
+        main.removeCallbacks(longPress);
+        okPending = false;
+        closeMenu();
+        if (moving) finishMove();
     }
 
     private void updateClock() {
@@ -163,11 +192,16 @@ public final class MainActivity extends Activity {
             }
             installed.remove(getPackageName());
             List<String> order = new ArrayList<>();
+            // The order set with Mover comes first, then the theme's dock for what it hasn't placed.
+            List<String> placed = new ArrayList<>(savedOrder());
             List<String> dock = strings(theme, "dock_apps");
-            if (dock.isEmpty()) dock = List.of(DEFAULT_DOCK);
-            for (String pkg : dock) if (installed.containsKey(pkg) && !hidden.contains(pkg)) order.add(pkg);
+            placed.addAll(dock.isEmpty() ? List.of(DEFAULT_DOCK) : dock);
+            for (String pkg : placed) {
+                if (installed.containsKey(pkg) && !hidden.contains(pkg) && !order.contains(pkg)) order.add(pkg);
+            }
             // An app installed later lands on the rows under the dock, so nothing becomes unreachable.
             for (String pkg : installed.keySet()) if (!order.contains(pkg) && !hidden.contains(pkg)) order.add(pkg);
+            keepLast(order, movedByUser());
             StringBuilder stamps = new StringBuilder();
             for (String pkg : order) {
                 File picture = pictureFile(pkg);
@@ -192,6 +226,8 @@ public final class MainActivity extends Activity {
                 fresh.add(c);
             }
             main.post(() -> {
+                if (moving) return;                         // Mover owns the row until it ends; the next resume reloads.
+                closeMenu();
                 loadedSignature = signature;
                 channels.clear();
                 channels.addAll(fresh);
@@ -212,6 +248,26 @@ public final class MainActivity extends Activity {
             if (file.isFile()) return file;
         }
         return null;
+    }
+
+    private List<String> savedOrder() {
+        List<String> out = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(prefs.getString("order", "[]"));
+            for (int i = 0; i < array.length(); i++) out.add(array.optString(i));
+        } catch (Exception unreadable) {
+            // Start over from the theme's dock.
+        }
+        return out;
+    }
+
+    /** The apps the person has carried to another place with Mover. */
+    private Set<String> movedByUser() {
+        return new HashSet<>(prefs.getStringSet("moved", Collections.emptySet()));
+    }
+
+    private static void keepLast(List<String> order, Set<String> moved) {
+        for (String pkg : LAST) if (!moved.contains(pkg) && order.remove(pkg)) order.add(pkg);
     }
 
     private int indexOf(String pkg) {
@@ -390,16 +446,224 @@ public final class MainActivity extends Activity {
                 || key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN;
         boolean ok = key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER
                 || key == KeyEvent.KEYCODE_NUMPAD_ENTER || key == KeyEvent.KEYCODE_BUTTON_A;
-        if (key == KeyEvent.KEYCODE_BACK) return true;     // Home is the bottom of the stack: Back has nowhere to go.
-        if (!dpad && !ok) return super.dispatchKeyEvent(event);
-        if (event.getAction() == KeyEvent.ACTION_DOWN) {
-            if (ok) {
-                if (event.getRepeatCount() == 0) open();
-            } else {
-                move(key);
+        boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
+        if (key == KeyEvent.KEYCODE_BACK) {
+            // Home is the bottom of the stack: Back only closes the menu or ends Mover.
+            if (down && event.getRepeatCount() == 0) {
+                if (menuIndex >= 0) closeMenu();
+                else if (moving) finishMove();
             }
+            return true;
+        }
+        if (!dpad && !ok) return super.dispatchKeyEvent(event);
+        if (ok) {
+            press(event);
+        } else if (down) {
+            if (menuIndex >= 0) moveInMenu(key);
+            else if (moving) carry(key);
+            else move(key);
         }
         return true;
+    }
+
+    /**
+     * OK acts when it is let go, so holding it can mean something else: past the long-press timeout the menu opens
+     * and the release does nothing. In the menu and in Mover, OK acts at once and its repeats are ignored.
+     */
+    private void press(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            if (event.getRepeatCount() != 0) {
+                // A remote that repeats a held key, or flags it as a long press, says so before the timer does.
+                if (okPending && !longPressed) {
+                    main.removeCallbacks(longPress);
+                    longPress.run();
+                }
+                return;
+            }
+            if (menuIndex >= 0) {
+                choose();
+            } else if (moving) {
+                finishMove();
+            } else if (onWifi || channels.isEmpty()) {
+                open();
+            } else {
+                okPending = true;
+                longPressed = false;
+                main.postDelayed(longPress, ViewConfiguration.getLongPressTimeout());
+            }
+        } else if (event.getAction() == KeyEvent.ACTION_UP && okPending) {
+            okPending = false;
+            main.removeCallbacks(longPress);
+            if (!longPressed && !event.isCanceled()) open();
+        }
+    }
+
+    private void showMenu() {
+        if (channels.isEmpty() || onWifi) return;
+        String pkg = channels.get(selected).pkg;
+        menuActions.clear();
+        menuActions.add(OPEN);
+        menuActions.add(MOVE);
+        if (PLAY_STORE.equals(installerOf(pkg))) menuActions.add(UPDATE);
+        menuActions.add(INFO);
+        if (!isSystemApp(pkg)) menuActions.add(UNINSTALL);
+        menu.removeAllViews();
+        LayoutInflater inflater = LayoutInflater.from(this);
+        for (String action : menuActions) {
+            TextView item = (TextView) inflater.inflate(R.layout.item_menu, menu, false);
+            item.setText(action);
+            if (UNINSTALL.equals(action)) item.setTextColor(getColor(R.color.danger));
+            menu.addView(item);
+        }
+        menuIndex = 0;
+        paintMenu();
+        menu.setAlpha(0f);
+        menu.setVisibility(View.VISIBLE);
+        menu.post(this::placeMenu);
+    }
+
+    /** Just above the selected tile, lined up with its left edge and kept inside the row's margins. */
+    private void placeMenu() {
+        if (menuIndex < 0) return;
+        float dp = getResources().getDisplayMetrics().density;
+        View root = (View) menu.getParent();
+        View tile = row.findViewByPosition(selected);
+        int[] at = new int[2], origin = new int[2];
+        root.getLocationInWindow(origin);
+        float x = 48 * dp, y = root.getHeight() - menu.getHeight() - 150 * dp;
+        if (tile != null) {
+            tile.getLocationInWindow(at);
+            x = at[0] - origin[0] + 6 * dp;
+            y = at[1] - origin[1] - menu.getHeight() - 10 * dp;
+        }
+        menu.setX(Math.min(x, root.getWidth() - menu.getWidth() - 48 * dp));
+        menu.setY(Math.max(24 * dp, y));
+        menu.animate().alpha(1f).setDuration(140).start();
+    }
+
+    private void paintMenu() {
+        int accent = channels.get(selected).accent;
+        menu.setBackground(card(0xFF0B1013, 0x29FFFFFF, 1f, 10f));
+        for (int i = 0; i < menu.getChildCount(); i++) {
+            menu.getChildAt(i).setBackground(i == menuIndex
+                    ? card(accent & 0x00FFFFFF | 0x47000000, accent, 2.25f, 7.5f) : null);
+        }
+    }
+
+    private void moveInMenu(int key) {
+        int next = menuIndex;
+        if (key == KeyEvent.KEYCODE_DPAD_UP && menuIndex > 0) next--;
+        if (key == KeyEvent.KEYCODE_DPAD_DOWN && menuIndex + 1 < menuActions.size()) next++;
+        if (next == menuIndex) return;
+        menuIndex = next;
+        paintMenu();
+    }
+
+    private void closeMenu() {
+        if (menuIndex < 0) return;
+        menuIndex = -1;
+        menu.animate().cancel();
+        menu.setVisibility(View.GONE);
+    }
+
+    private void choose() {
+        String action = menuActions.get(menuIndex);
+        String pkg = channels.get(selected).pkg;
+        Uri app = Uri.fromParts("package", pkg, null);
+        closeMenu();
+        switch (action) {
+            case OPEN:
+                open();
+                break;
+            case MOVE:
+                startMove();
+                break;
+            case UPDATE:
+                launch(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkg)).setPackage(PLAY_STORE));
+                break;
+            case INFO:
+                launch(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, app));
+                break;
+            case UNINSTALL:
+                launch(new Intent(Intent.ACTION_DELETE, app));
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void launch(Intent intent) {
+        try {
+            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (RuntimeException noScreenForIt) {
+            // This TV has no screen for that action; the menu is already closed.
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private String installerOf(String pkg) {
+        try {
+            PackageManager pm = getPackageManager();
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                    ? pm.getInstallSourceInfo(pkg).getInstallingPackageName() : pm.getInstallerPackageName(pkg);
+        } catch (Exception unknown) {
+            return null;
+        }
+    }
+
+    /** Preinstalled apps can't be uninstalled from here, only disabled from a computer. */
+    private boolean isSystemApp(String pkg) {
+        try {
+            return (getPackageManager().getApplicationInfo(pkg, 0).flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+        } catch (PackageManager.NameNotFoundException gone) {
+            return true;
+        }
+    }
+
+    private void startMove() {
+        if (channels.isEmpty()) return;
+        moving = true;
+        moveStart = selected;
+        selectedLabel.setText("MOVIENDO");
+        description.setText("Usa ◀ ▶ para cambiar su lugar. OK o Atrás para terminar.");
+        tiles.getAdapter().notifyItemChanged(selected);
+    }
+
+    /** Swaps the lifted tile with its neighbour; the page follows it past the edge like a normal move. */
+    private void carry(int key) {
+        int to = selected;
+        if (key == KeyEvent.KEYCODE_DPAD_LEFT && selected > 0) to--;
+        if (key == KeyEvent.KEYCODE_DPAD_RIGHT && selected + 1 < channels.size()) to++;
+        if (to == selected) return;
+        Collections.swap(channels, selected, to);
+        int from = selected;
+        selected = to;
+        painted = to;
+        tiles.getAdapter().notifyItemChanged(from);
+        tiles.getAdapter().notifyItemChanged(to);
+        showPage(true);
+    }
+
+    /** Saves the row; Play Store and Ajustes go back to the end unless they were the ones carried somewhere. */
+    private void finishMove() {
+        moving = false;
+        String lifted = channels.get(selected).pkg;
+        Set<String> moved = movedByUser();
+        if (selected != moveStart) moved.add(lifted);
+        List<String> order = new ArrayList<>();
+        for (Channel c : channels) order.add(c.pkg);
+        keepLast(order, moved);
+        List<Channel> sorted = new ArrayList<>();
+        for (String pkg : order) sorted.add(channels.get(indexOf(pkg)));
+        channels.clear();
+        channels.addAll(sorted);
+        selected = indexOf(lifted);
+        painted = selected;
+        prefs.edit().putString("order", new JSONArray(order).toString()).putStringSet("moved", moved).apply();
+        selectedLabel.setText(R.string.selected);
+        description.setText(channels.get(selected).description);
+        tiles.getAdapter().notifyDataSetChanged();
+        showPage(true);
     }
 
     private void move(int key) {
@@ -473,7 +737,11 @@ public final class MainActivity extends Activity {
             if (isSettings) icon.setImageResource(R.drawable.ic_gear);
             else icon.setImageDrawable(c.icon);
             // Translucent on the shared background, so the row reads as part of it and not as a bar over it.
-            if (position == selected && !onWifi) {
+            boolean lifted = moving && position == selected;
+            holder.itemView.setTranslationY(lifted ? -8 * getResources().getDisplayMetrics().density : 0f);
+            if (lifted) {
+                card.setBackground(card(c.accent & 0x00FFFFFF | 0x8C000000, c.accent, 3f, 7.5f));
+            } else if (position == selected && !onWifi) {
                 card.setBackground(card(c.accent & 0x00FFFFFF | 0x47000000, c.accent, 2.25f, 7.5f));
             } else if (position == selected) {
                 card.setBackground(card(0x59000000, c.accent & 0x00FFFFFF | 0x80000000, 1f, 7.5f));

@@ -9,6 +9,8 @@
     <color name="ink">#F2F2EE</color>
     <color name="ink_soft">#C9D1D3</color>
     <color name="ink_mute">#A7B2B5</color>
+    <!-- Desinstalar in the hold-OK menu: about 6.5:1 on the menu's ground. -->
+    <color name="danger">#FF6B6B</color>
     <color name="accent">#FF8A66</color>
     <color name="tile">#12191C</color>
     <color name="tile_on">#1A2226</color>
