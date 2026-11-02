@@ -33,7 +33,9 @@ Para un cambio grande, abre primero un issue y lo conversamos.
 
 Vienen de cleanyourtv y mantienen el Home ligero y seguro:
 
-- **Sin red:** nada de permiso `INTERNET`, analíticas ni telemetría.
+- **Red mínima:** el único uso de internet son las imágenes de Play Store y las que enlaza el tema
+  ([`PlayPictures.java`](launcher/app/src/main/java/com/gathin/tvhome/PlayPictures.java)), solo con el Home en
+  pantalla y apagable con `"auto_pictures": false`. Nada de analíticas, telemetría ni otras conexiones.
 - **Ligero:** sin servicios en segundo plano, consultas periódicas, desenfoque ni video.
 - **Control remoto predecible:** cada botón tiene un solo resultado, probado desde todos los bordes.
 - **Sin dependencias nuevas** sin hablarlo antes en un issue.

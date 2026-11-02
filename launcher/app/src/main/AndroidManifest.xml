@@ -4,6 +4,10 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+    <!-- Only for the featured pictures from each app's Play Store page (PlayPictures), while Home is on screen;
+         a theme with "auto_pictures": false never connects. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Desinstalar in the hold-OK menu: without it Android drops the uninstall request silently. -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 

@@ -45,6 +45,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
@@ -57,6 +58,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Home, built from the Cine board: the selected channel fills the top, its tile sits in the row below.
@@ -65,6 +67,8 @@ import java.util.concurrent.Executors;
  * last app; Up goes to the Wi-Fi button and Down from there comes back to the same tile.
  * A tap of OK opens the app when OK is let go; holding it opens a menu over the tile instead, whose Mover lifts the
  * tile so Left/Right carry it along the row, and the order is kept until the app data is cleared.
+ * Each channel shows the person's own pictures (pushed to hero/ or linked from the theme), or else up to six from its
+ * Play Store page; two or more take turns every few seconds.
  */
 public final class MainActivity extends Activity {
     private static final int COLUMNS = 6;
@@ -87,15 +91,37 @@ public final class MainActivity extends Activity {
     private static final class Channel {
         String pkg, name, description;
         Drawable icon, banner;
-        File picture;
+        List<File> pictures = new ArrayList<>();
+        int shown;                                          // Which of the pictures is on screen; they take turns.
         int color, accent;
     }
 
+    private static final long ROTATE_MS = 8000;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Channel> channels = new ArrayList<>();
     // Two full-screen pictures at most: the one on screen and the one just left.
     private final LruCache<String, Bitmap> pictures = new LruCache<>(2);
     private final ExecutorService pictureWorker = Executors.newSingleThreadExecutor();
+    // Play Store pictures, one app at a time and only while Home is on screen; see PlayPictures.
+    private final ExecutorService fetcher = Executors.newSingleThreadExecutor();
+    private final AtomicBoolean fetching = new AtomicBoolean();
+    private volatile boolean visible;
+    private boolean autoPictures = true;
+    private Map<String, List<String>> themeLinks = new HashMap<>();
+    // Brightness correction per picture file, measured once when it is first decoded.
+    private final Map<String, Float> gains = new HashMap<>();
+    private final Runnable rotate = new Runnable() {
+        @Override public void run() {
+            if (!channels.isEmpty() && menuIndex < 0 && !moving) {
+                Channel c = channels.get(selected);
+                if (c.pictures.size() > 1) {
+                    c.shown = (c.shown + 1) % c.pictures.size();
+                    showArt(c, true);
+                }
+            }
+            main.postDelayed(this, ROTATE_MS);
+        }
+    };
     private ArtView art;
     private TextView greeting, clock, selectedLabel, title, description;
     private View wifi;
@@ -137,7 +163,7 @@ public final class MainActivity extends Activity {
         arrowLeft = findViewById(R.id.arrow_left);
         arrowRight = findViewById(R.id.arrow_right);
         menu = findViewById(R.id.menu);
-        row =new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false);
+        row = new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false);
         tiles.setLayoutManager(row);
         tiles.setItemAnimator(null);
         tiles.setAdapter(new Tiles());
@@ -147,6 +173,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        visible = true;
         registerReceiver(tick, new IntentFilter(Intent.ACTION_TIME_TICK), null, null);
         updateClock();
         loadChannels();
@@ -155,7 +182,9 @@ public final class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        visible = false;
         unregisterReceiver(tick);
+        main.removeCallbacks(rotate);
         main.removeCallbacks(longPress);
         okPending = false;
         closeMenu();
@@ -202,13 +231,25 @@ public final class MainActivity extends Activity {
             // An app installed later lands on the rows under the dock, so nothing becomes unreachable.
             for (String pkg : installed.keySet()) if (!order.contains(pkg) && !hidden.contains(pkg)) order.add(pkg);
             keepLast(order, movedByUser());
+            boolean auto = theme.optBoolean("auto_pictures", true);
+            Map<String, List<String>> links = new HashMap<>();
+            for (Map.Entry<String, String> entry : pairs(theme, "app_pictures").entrySet()) {
+                List<String> urls = new ArrayList<>();
+                for (String url : entry.getValue().trim().split("[\\s|]+")) if (!url.isEmpty()) urls.add(url);
+                if (!urls.isEmpty()) links.put(entry.getKey(), urls);
+            }
+            forgetUnused(installed.keySet(), links.keySet());
             StringBuilder stamps = new StringBuilder();
             for (String pkg : order) {
-                File picture = pictureFile(pkg);
-                if (picture != null) stamps.append(picture.getName()).append(picture.lastModified());
+                for (File picture : picturesOf(pkg, auto, links)) {
+                    stamps.append(picture.getPath()).append(picture.lastModified());
+                }
             }
-            String signature = order + "|" + labels + "|" + notes + "|" + setColors + "|" + stamps;
-            if (signature.equals(loadedSignature)) return;
+            String signature = order + "|" + labels + "|" + notes + "|" + setColors + "|" + auto + "|" + links + "|" + stamps;
+            if (signature.equals(loadedSignature)) {
+                if (auto) main.post(() -> fetchMissing(order, links));
+                return;
+            }
             List<Channel> fresh = new ArrayList<>();
             for (String pkg : order) {
                 ResolveInfo info = installed.get(pkg);
@@ -220,7 +261,7 @@ public final class MainActivity extends Activity {
                 c.description = note != null ? note : DESCRIPTIONS.getOrDefault(pkg, "");
                 c.icon = info.loadIcon(pm);
                 c.banner = bannerOf(pm, info);
-                c.picture = pictureFile(pkg);
+                c.pictures = picturesOf(pkg, auto, links);
                 c.color = colorOf(setColors.get(pkg), pm, info);
                 c.accent = accentOf(c.color);
                 fresh.add(c);
@@ -229,6 +270,8 @@ public final class MainActivity extends Activity {
                 if (moving) return;                         // Mover owns the row until it ends; the next resume reloads.
                 closeMenu();
                 loadedSignature = signature;
+                autoPictures = auto;
+                themeLinks = links;
                 channels.clear();
                 channels.addAll(fresh);
                 pictures.evictAll();
@@ -236,18 +279,97 @@ public final class MainActivity extends Activity {
                 tiles.getAdapter().notifyDataSetChanged();
                 painted = selected;
                 render(false);
+                if (auto) fetchMissing(order, links);
             });
         });
     }
 
-    /** The featured picture for an app, if one was pushed: files/hero/<package>.jpg, .png or .webp. */
-    private File pictureFile(String pkg) {
-        File dir = new File(getExternalFilesDir(null), "hero");
+    /**
+     * The person's own pictures win: pushed to hero/, and the ones the theme links to. Only an app with none of those,
+     * and none still to fetch, gets the Play Store ones; with auto_pictures off, nothing fetched is shown.
+     */
+    private List<File> picturesOf(String pkg, boolean auto, Map<String, List<String>> links) {
+        List<File> own = pushedPictures(pkg);
+        if (auto && links.containsKey(pkg)) own.addAll(PlayPictures.stored(fetchedDir("links", pkg)));
+        if (!own.isEmpty() || links.containsKey(pkg)) return own;
+        return auto ? PlayPictures.stored(fetchedDir("auto", pkg)) : new ArrayList<>();
+    }
+
+    /** Pushed pictures: hero/<package>.jpg (or .png, .webp), then every picture in hero/<package>/, by name. */
+    private List<File> pushedPictures(String pkg) {
+        List<File> out = new ArrayList<>();
+        File hero = new File(getExternalFilesDir(null), "hero");
         for (String extension : new String[] {".jpg", ".png", ".webp"}) {
-            File file = new File(dir, pkg + extension);
-            if (file.isFile()) return file;
+            File file = new File(hero, pkg + extension);
+            if (file.isFile()) {
+                out.add(file);
+                break;
+            }
         }
-        return null;
+        File[] folder = new File(hero, pkg).listFiles((dir, name) -> name.matches("(?i).+\\.(jpe?g|png|webp)"));
+        if (folder != null) {
+            Arrays.sort(folder);
+            out.addAll(Arrays.asList(folder));
+        }
+        return out;
+    }
+
+    private File fetchedDir(String kind, String pkg) {
+        return new File(new File(getExternalFilesDir(null), kind), pkg);
+    }
+
+    /** Pictures of apps that are gone, or of links the theme no longer lists, take no room. */
+    private void forgetUnused(Set<String> installed, Set<String> linked) {
+        for (String kind : new String[] {"auto", "links"}) {
+            File[] dirs = new File(getExternalFilesDir(null), kind).listFiles();
+            if (dirs == null) continue;
+            for (File dir : dirs) {
+                boolean used = kind.equals("auto") ? installed.contains(dir.getName()) : linked.contains(dir.getName());
+                if (used) continue;
+                File[] files = dir.listFiles();
+                if (files != null) for (File file : files) file.delete();
+                dir.delete();
+            }
+        }
+    }
+
+    /**
+     * Fetches the pictures a theme links to, and Play Store pictures for the apps that have none of their own, when
+     * they are missing or a week old, one app at a time. It stops when Home leaves the screen or the network fails,
+     * and carries on at the next visit.
+     */
+    private void fetchMissing(List<String> order, Map<String, List<String>> links) {
+        if (!fetching.compareAndSet(false, true)) return;
+        List<String> pkgs = new ArrayList<>(order);
+        fetcher.execute(() -> {
+            try {
+                for (String pkg : pkgs) {
+                    if (!visible) break;
+                    List<String> urls = links.get(pkg);
+                    if (urls != null) {
+                        File dir = fetchedDir("links", pkg);
+                        if (PlayPictures.linksFresh(dir, urls)) continue;
+                        if (!PlayPictures.fetchLinks(urls, dir)) break;
+                    } else {
+                        File dir = fetchedDir("auto", pkg);
+                        if (!pushedPictures(pkg).isEmpty() || PlayPictures.fresh(dir)) continue;
+                        if (!PlayPictures.fetch(pkg, dir)) break;
+                    }
+                    main.post(() -> picturesArrived(pkg));
+                }
+            } finally {
+                fetching.set(false);
+            }
+        });
+    }
+
+    private void picturesArrived(String pkg) {
+        int i = indexOf(pkg);
+        if (i < 0 || !autoPictures) return;
+        Channel c = channels.get(i);
+        c.pictures = picturesOf(pkg, true, themeLinks);
+        c.shown = 0;
+        if (i == selected) showArt(c, true);
     }
 
     private List<String> savedOrder() {
@@ -383,27 +505,60 @@ public final class MainActivity extends Activity {
                 : card(0x47000000, 0x33FFFFFF, 1f, 19.5f));
     }
 
-    /** The channel's picture if it has one, decoded off the main thread; its logo on its colour otherwise. */
-    private void showArt(Channel c) {
-        if (c.picture == null) {
+    /**
+     * The channel's current picture if it has any, decoded off the main thread; its logo on its colour otherwise.
+     * A turn of the rotation keeps the old picture up until the new one is decoded, then fades it in.
+     */
+    private void showArt(Channel c, boolean turn) {
+        if (c.pictures.isEmpty()) {
             art.show(c.color, null, c.banner);
             return;
         }
-        Bitmap cached = pictures.get(c.pkg);
-        if (cached != null) {
-            art.show(c.color, cached, null);
+        File file = c.pictures.get(c.shown % c.pictures.size());
+        String key = file.getPath();
+        Bitmap cached = pictures.get(key);
+        if (cached != null && gains.containsKey(key)) {
+            showPicture(c, cached, gains.get(key), turn);
             return;
         }
-        art.show(c.color, null, null);
+        boolean store = file.getParentFile().getParentFile().getName().equals("auto");
+        if (!turn) art.show(c.color, null, null);
         pictureWorker.execute(() -> {
-            Bitmap decoded = BitmapFactory.decodeFile(c.picture.getPath());
+            Bitmap decoded = decodeForScreen(file);
+            float gain = decoded == null ? 1f : ArtView.gainFor(decoded, store);
             main.post(() -> {
-                if (decoded != null) pictures.put(c.pkg, decoded);
-                if (!channels.isEmpty() && channels.get(selected) == c) {
-                    art.show(c.color, decoded, decoded == null ? c.banner : null);
+                if (decoded != null) {
+                    pictures.put(key, decoded);
+                    gains.put(key, gain);
                 }
+                if (channels.isEmpty() || channels.get(selected) != c) return;
+                if (decoded != null) showPicture(c, decoded, gain, turn);
+                else if (!turn) art.show(c.color, null, c.banner);
             });
         });
+    }
+
+    /**
+     * Pictures can come at any size, from a camera or a theme's link. The picture fills the 70% of the screen right of
+     * the text, so it is halved for as long as it stays at least that wide: a 3440 px photo decodes at 1720 px, about
+     * 8 MB instead of 32, which a 1 GB TV can afford twice over.
+     */
+    private Bitmap decodeForScreen(File file) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getPath(), bounds);
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = 1;
+        int area = Math.round(getResources().getDisplayMetrics().widthPixels * .7f);
+        while (bounds.outWidth / (options.inSampleSize * 2) >= area) options.inSampleSize *= 2;
+        return BitmapFactory.decodeFile(file.getPath(), options);
+    }
+
+    private void showPicture(Channel c, Bitmap picture, float gain, boolean turn) {
+        art.show(c.color, picture, null, gain);
+        if (!turn) return;
+        art.setAlpha(.45f);
+        art.animate().alpha(1f).setDuration(700).start();
     }
 
     /** Brings the selected tile's page of six into place and shows an arrow on each side that has another page. */
@@ -429,9 +584,11 @@ public final class MainActivity extends Activity {
         paintTitle(c.accent);
         selectedLabel.setTextColor(c.accent);
         description.setText(c.description);
-        showArt(c);
+        showArt(c, false);
         art.setAlpha(.6f);
         art.animate().alpha(1f).setDuration(220).start();
+        main.removeCallbacks(rotate);
+        main.postDelayed(rotate, ROTATE_MS);
         showPage(slide);
         if (painted >= 0 && painted != selected) tiles.getAdapter().notifyItemChanged(painted);
         tiles.getAdapter().notifyItemChanged(selected);

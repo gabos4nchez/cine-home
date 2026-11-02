@@ -25,12 +25,16 @@ import android.view.View;
 public final class ArtView extends View {
     private static final int BASE = 0xFF0A0A26;
     private static final int DEFAULT_COLOR = 0xFF2A4BE0;
-    private static final float PICTURE_LEFT = .30f, PICTURE_LIFT = 1.45f, LOGO_CX = .72f, LOGO_CY = .36f, LOGO_W = .30f;
+    private static final float PICTURE_LEFT = .30f, LOGO_CX = .72f, LOGO_CY = .36f, LOGO_W = .30f;
+    // A chosen picture is brought towards PICTURE_TARGET mean brightness, within these bounds; store screenshots,
+    // already picked for being dark, always get STORE_DIM.
+    private static final float PICTURE_TARGET = .32f, PICTURE_LIFT = 1.45f, STORE_DIM = .85f;
 
     private final Paint ground = new Paint();
     private final Paint glow = newPaint(), glowLow = newPaint();
-    private final Paint scrim = newPaint(), scrimLow = newPaint();
+    private final Paint scrim = newPaint(), scrimLow = newPaint(), scrimTop = newPaint();
     private final Paint picturePaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private float gain = Float.NaN;
     private final Path logoClip = new Path();
     private final RectF logoBox = new RectF();
     private final Rect pictureSrc = new Rect();
@@ -42,11 +46,34 @@ public final class ArtView extends View {
 
     public ArtView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        // Pictures made as dim app backgrounds need a lift to read as the screen's main image.
+    }
+
+    /**
+     * How much to brighten or dim a picture: a dim app background needs a lift to read as the screen's main image, a
+     * bright photo would glare behind the title. Measured on a tiny copy, off the main thread.
+     */
+    static float gainFor(Bitmap picture, boolean store) {
+        if (store) return STORE_DIM;
+        Bitmap tiny = Bitmap.createScaledBitmap(picture, 32, 18, true);
+        float sum = 0;
+        for (int y = 0; y < 18; y++) {
+            for (int x = 0; x < 32; x++) {
+                int p = tiny.getPixel(x, y);
+                sum += .299f * Color.red(p) + .587f * Color.green(p) + .114f * Color.blue(p);
+            }
+        }
+        if (tiny != picture) tiny.recycle();
+        float mean = sum / (32 * 18 * 255f);
+        return Math.max(STORE_DIM, Math.min(PICTURE_LIFT, PICTURE_TARGET / Math.max(.01f, mean)));
+    }
+
+    private void setGain(float k) {
+        if (k == gain) return;
+        gain = k;
         picturePaint.setColorFilter(new ColorMatrixColorFilter(new ColorMatrix(new float[] {
-                PICTURE_LIFT, 0, 0, 0, 0,
-                0, PICTURE_LIFT, 0, 0, 0,
-                0, 0, PICTURE_LIFT, 0, 0,
+                k, 0, 0, 0, 0,
+                0, k, 0, 0, 0,
+                0, 0, k, 0, 0,
                 0, 0, 0, 1, 0})));
     }
 
@@ -58,6 +85,12 @@ public final class ArtView extends View {
 
     /** A channel with no colour of its own (0) gets a dim slate glow, to sit under its silver accent. */
     void show(int dominant, Bitmap newPicture, Drawable newLogo) {
+        show(dominant, newPicture, newLogo, 1f);
+    }
+
+    /** A picture is shaded at the top too, where a screenshot's own captions would meet the clock. */
+    void show(int dominant, Bitmap newPicture, Drawable newLogo, float pictureGain) {
+        setGain(pictureGain);
         neutral = dominant == 0;
         color = neutral ? DEFAULT_COLOR : dominant;
         picture = newPicture;
@@ -89,6 +122,7 @@ public final class ArtView extends View {
                 new float[] {0f, PICTURE_LEFT, .44f, .66f}, Shader.TileMode.CLAMP));
         // The row of channels sits on the picture itself: only a shade under it, so it stays one surface.
         scrimLow.setShader(new LinearGradient(0, h, 0, h * .58f, rgb | 0xB3000000, rgb, Shader.TileMode.CLAMP));
+        scrimTop.setShader(new LinearGradient(0, 0, 0, h * .30f, rgb | 0xE6000000, rgb, Shader.TileMode.CLAMP));
         if (picture != null) {
             // Centre-crop to the area right of PICTURE_LEFT.
             pictureDst.set(PICTURE_LEFT * w, 0, w, h);
@@ -115,6 +149,7 @@ public final class ArtView extends View {
             canvas.drawBitmap(picture, pictureSrc, pictureDst, picturePaint);
             canvas.drawRect(0, 0, w, h, scrim);
             canvas.drawRect(0, 0, w, h, scrimLow);
+            canvas.drawRect(0, 0, w, h * .30f, scrimTop);
             return;
         }
         canvas.drawRect(0, 0, w, h, glow);

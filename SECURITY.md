@@ -13,7 +13,8 @@ Si el fallo está en `tools/`, `launcher/build-and-install.ps1` o el método de 
 
 ## Qué cuenta
 
-- El launcher accede a la red, expone datos a otras apps o abre algo que no debería.
+- El launcher se conecta a algo distinto de las páginas e imágenes de Play Store y los enlaces del tema, expone datos
+  a otras apps o abre algo que no debería.
 - Los scripts ejecutan comandos en un equipo al que no se apuntó, o manejan mal rutas o datos de entrada.
 - Una lista deja un TV que no se puede restaurar con `scripts\restore.ps1`.
 - Un pull request ejecuta código en el equipo de quien colabora o revisa.

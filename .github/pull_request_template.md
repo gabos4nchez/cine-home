@@ -6,7 +6,7 @@
 - [ ] Compila con `scripts\build-and-install.ps1 -SoloCompilar`
 - [ ] Probado en un TV real, con captura adjunta
 - [ ] Control remoto probado desde todos los bordes (arriba, abajo, izquierda, derecha)
-- [ ] Sin red, sin servicios en segundo plano y sin permisos nuevos
+- [ ] Sin conexiones nuevas a internet, sin servicios en segundo plano y sin permisos nuevos
 
 ### Si añade o cambia una lista
 - [ ] Está en `device/<marca-modelo>/debloat.txt`, con modelo, versión de Android y build en la cabecera
