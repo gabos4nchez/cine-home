@@ -36,6 +36,7 @@ public final class ArtView extends View {
     private final Rect pictureSrc = new Rect();
     private final RectF pictureDst = new RectF();
     private int color = DEFAULT_COLOR;
+    private boolean neutral = true;
     private Bitmap picture;
     private Drawable logo;
 
@@ -55,9 +56,10 @@ public final class ArtView extends View {
         return paint;
     }
 
-    /** A channel with no colour of its own (0) gets the default blue. */
+    /** A channel with no colour of its own (0) gets a dim slate glow, to sit under its silver accent. */
     void show(int dominant, Bitmap newPicture, Drawable newLogo) {
-        color = dominant == 0 ? DEFAULT_COLOR : dominant;
+        neutral = dominant == 0;
+        color = neutral ? DEFAULT_COLOR : dominant;
         picture = newPicture;
         logo = newLogo;
         build();
@@ -75,9 +77,10 @@ public final class ArtView extends View {
         ground.setColor(BASE);
         float[] hsv = new float[3];
         Color.colorToHSV(color, hsv);
-        float k = Math.max(.55f, Math.min(1f, hsv[2] / .9f));
-        int main = Color.HSVToColor(new float[] {hsv[0], .85f, .72f * k});
-        int low = Color.HSVToColor(new float[] {(hsv[0] + 335) % 360, .85f, .50f * k});
+        float k = Math.max(.55f, Math.min(1f, hsv[2] / .9f)) * (neutral ? .65f : 1f);
+        float s = neutral ? .40f : .85f;
+        int main = Color.HSVToColor(new float[] {hsv[0], s, .72f * k});
+        int low = Color.HSVToColor(new float[] {(hsv[0] + 335) % 360, s, .50f * k});
         glow.setShader(new RadialGradient(LOGO_CX * w, LOGO_CY * h, .46f * w, main, main & 0x00FFFFFF, Shader.TileMode.CLAMP));
         glowLow.setShader(new RadialGradient(.96f * w, h, .40f * w, low, low & 0x00FFFFFF, Shader.TileMode.CLAMP));
         int rgb = BASE & 0x00FFFFFF;

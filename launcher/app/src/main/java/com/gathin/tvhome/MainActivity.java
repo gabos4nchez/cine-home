@@ -351,7 +351,7 @@ public final class MainActivity extends Activity {
 
     /** Bright enough to read as text on the dark ground and to carry dark text on the button, at 4.5:1 or better. */
     private int accentOf(int dominant) {
-        if (dominant == 0) return getColor(R.color.accent);
+        if (dominant == 0) return getColor(R.color.neutral);     // Black, white or grey banners: no colour to borrow.
         float[] hsv = new float[3];
         Color.colorToHSV(dominant, hsv);
         boolean darkHue = hsv[0] >= 210 && hsv[0] <= 290;
